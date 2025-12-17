@@ -41,6 +41,7 @@ function initDatabase() {
         event_type TEXT,
         revenue REAL DEFAULT 0,
         website TEXT,
+        metadata TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
@@ -57,6 +58,13 @@ function initDatabase() {
     } catch (PDOException $e) {
         // Column doesn't exist, add it
         $db->exec("ALTER TABLE events ADD COLUMN website TEXT");
+    }
+
+    try {
+        $db->exec("SELECT metadata FROM events LIMIT 1");
+    } catch (PDOException $e) {
+        // Column doesn't exist, add it
+        $db->exec("ALTER TABLE events ADD COLUMN metadata TEXT");
     }
 
     return $db;
@@ -210,14 +218,18 @@ if ($page === 'api/track') {
 
     $data = json_decode(file_get_contents('php://input'), true);
 
-    $stmt = $db->prepare("INSERT INTO events (test_id, variant_id, user_id, event_type, revenue, website) VALUES (?, ?, ?, ?, ?, ?)");
+    // Convert metadata to JSON string if present
+    $metadata = isset($data['metadata']) ? json_encode($data['metadata']) : null;
+
+    $stmt = $db->prepare("INSERT INTO events (test_id, variant_id, user_id, event_type, revenue, website, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $data['test_id'],
         $data['variant_id'],
         $data['user_id'],
         $data['event_type'],
         $data['revenue'] ?? 0,
-        $data['website'] ?? null
+        $data['website'] ?? null,
+        $metadata
     ]);
 
     echo json_encode(['success' => true]);

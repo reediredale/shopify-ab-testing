@@ -7,7 +7,7 @@
 // 3. Or paste in Settings > Custom JS
 // ============================================
 
-const API_URL = 'https://your-domain.com'; // CHANGE THIS!
+const API_URL = 'https://ab.reediredale.com'; // CHANGE THIS!
 
 // ============================================
 // CONFIGURATION
@@ -58,7 +58,7 @@ function getCurrentWebsite() {
 }
 
 // Track event to API
-function trackEvent(testId, variantId, eventType, revenue = 0) {
+function trackEvent(testId, variantId, eventType, revenue = 0, metadata = {}) {
     const userId = getUserId();
     const website = getCurrentWebsite();
 
@@ -71,7 +71,8 @@ function trackEvent(testId, variantId, eventType, revenue = 0) {
             user_id: userId,
             event_type: eventType,
             revenue: revenue,
-            website: website
+            website: website,
+            metadata: metadata
         })
     }).catch(err => console.error('Tracking error:', err));
 }
@@ -84,6 +85,67 @@ function matchesPattern(pattern, url) {
     } catch (e) {
         return false;
     }
+}
+
+// Extract product data from page
+function getProductData(element) {
+    const productData = {
+        product_id: null,
+        variant_id: null,
+        product_name: null,
+        price: 0,
+        quantity: 1
+    };
+
+    // Try to find the form element
+    const form = element.closest('form[action*="/cart/add"]');
+
+    if (form) {
+        // Get variant ID
+        const variantInput = form.querySelector('[name="id"], [name="variant_id"]');
+        if (variantInput) {
+            productData.variant_id = variantInput.value;
+        }
+
+        // Get quantity
+        const quantityInput = form.querySelector('[name="quantity"]');
+        if (quantityInput) {
+            productData.quantity = parseInt(quantityInput.value) || 1;
+        }
+    }
+
+    // Try to get price from various locations
+    let priceText = null;
+
+    // Method 1: Shopify product object (most reliable)
+    if (typeof ShopifyAnalytics !== 'undefined' && ShopifyAnalytics.meta && ShopifyAnalytics.meta.product) {
+        const product = ShopifyAnalytics.meta.product;
+        productData.product_id = product.id;
+        productData.product_name = product.name;
+        productData.price = parseFloat(product.variants[0]?.price || 0);
+    }
+    // Method 2: Look for price in DOM
+    else {
+        const priceElements = document.querySelectorAll('.price, [data-price], .product-price, .money');
+        for (const priceEl of priceElements) {
+            const text = priceEl.textContent || priceEl.getAttribute('data-price') || '';
+            const cleaned = text.replace(/[^0-9.]/g, '');
+            if (cleaned && parseFloat(cleaned) > 0) {
+                productData.price = parseFloat(cleaned);
+                break;
+            }
+        }
+    }
+
+    // Get product name if not already set
+    if (!productData.product_name) {
+        const titleEl = document.querySelector('.product-title, .product__title, h1[itemprop="name"]');
+        if (titleEl) {
+            productData.product_name = titleEl.textContent.trim();
+        }
+    }
+
+    return productData;
 }
 
 // Assign variant based on traffic split
@@ -151,7 +213,23 @@ async function initABTests() {
             document.addEventListener('click', function(e) {
                 const target = e.target.closest('form[action*="/cart/add"], button[name="add"], .add-to-cart, [data-add-to-cart]');
                 if (target) {
-                    trackEvent(test.id, variant.id, 'add_to_cart');
+                    // Extract product data
+                    const productData = getProductData(target);
+                    const cartValue = productData.price * productData.quantity;
+
+                    // Track with product details and cart value as revenue
+                    trackEvent(test.id, variant.id, 'add_to_cart', cartValue, {
+                        product_id: productData.product_id,
+                        variant_id: productData.variant_id,
+                        product_name: productData.product_name,
+                        price: productData.price,
+                        quantity: productData.quantity
+                    });
+
+                    console.log('Add-to-cart tracked:', {
+                        cart_value: cartValue,
+                        product: productData
+                    });
                 }
             });
 
@@ -161,16 +239,30 @@ async function initABTests() {
                 window.location.pathname.includes('/checkouts/') ||
                 window.location.search.includes('checkout')) {
 
-                // Try to get order value from Shopify checkout object
+                // Try to get order details from Shopify checkout object
                 let revenue = 0;
+                let orderMetadata = {};
 
                 // Method 1: Shopify.checkout (most common)
-                if (typeof Shopify !== 'undefined' && Shopify.checkout && Shopify.checkout.total_price) {
-                    revenue = parseFloat(Shopify.checkout.total_price);
+                if (typeof Shopify !== 'undefined' && Shopify.checkout) {
+                    const checkout = Shopify.checkout;
+                    revenue = parseFloat(checkout.total_price) || 0;
+
+                    orderMetadata = {
+                        order_id: checkout.order_id,
+                        subtotal: parseFloat(checkout.subtotal_price) || 0,
+                        total: parseFloat(checkout.total_price) || 0,
+                        tax: parseFloat(checkout.total_tax) || 0,
+                        shipping: parseFloat(checkout.shipping_rate?.price) || 0,
+                        discount: parseFloat(checkout.discount?.amount) || 0,
+                        currency: checkout.currency,
+                        item_count: checkout.line_items?.length || 0
+                    };
                 }
                 // Method 2: Shopify.Checkout (alternative)
-                else if (typeof Shopify !== 'undefined' && Shopify.Checkout && Shopify.Checkout.total_price) {
-                    revenue = parseFloat(Shopify.Checkout.total_price);
+                else if (typeof Shopify !== 'undefined' && Shopify.Checkout) {
+                    revenue = parseFloat(Shopify.Checkout.total_price) || 0;
+                    orderMetadata.total = revenue;
                 }
                 // Method 3: Look for order data in meta tags (some themes)
                 else {
@@ -181,6 +273,7 @@ async function initABTests() {
                         if (priceElements.length > 0) {
                             const priceText = priceElements[0].textContent.replace(/[^0-9.]/g, '');
                             revenue = parseFloat(priceText) || 0;
+                            orderMetadata.total = revenue;
                         }
                     }
                 }
@@ -190,10 +283,11 @@ async function initABTests() {
                     test_id: test.id,
                     variant_id: variant.id,
                     revenue: revenue,
+                    order_details: orderMetadata,
                     shopify_data_available: typeof Shopify !== 'undefined' && !!Shopify.checkout
                 });
 
-                trackEvent(test.id, variant.id, 'purchase', revenue);
+                trackEvent(test.id, variant.id, 'purchase', revenue, orderMetadata);
             }
         }
 
