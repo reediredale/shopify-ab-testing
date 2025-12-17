@@ -357,7 +357,7 @@ if (isset($_GET['toggle'])) {
     </style>
 </head>
 <body>
-
+test
 <?php if ($page === 'login'): ?>
     <!-- LOGIN PAGE -->
     <div class="login-box">
