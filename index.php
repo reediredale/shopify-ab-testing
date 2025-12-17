@@ -357,7 +357,7 @@ if (isset($_GET['toggle'])) {
     </style>
 </head>
 <body>
-test
+
 <?php if ($page === 'login'): ?>
     <!-- LOGIN PAGE -->
     <div class="login-box">
@@ -622,6 +622,10 @@ test
         $stmt->execute([$variant['id']]);
         $views = $stmt->fetchColumn();
 
+        $stmt = $db->prepare("SELECT COUNT(DISTINCT user_id) as add_to_carts FROM events WHERE variant_id = ? AND event_type = 'add_to_cart'");
+        $stmt->execute([$variant['id']]);
+        $addToCarts = $stmt->fetchColumn();
+
         $stmt = $db->prepare("SELECT COUNT(DISTINCT user_id) as conversions FROM events WHERE variant_id = ? AND event_type = 'purchase'");
         $stmt->execute([$variant['id']]);
         $conversions = $stmt->fetchColumn();
@@ -630,16 +634,26 @@ test
         $stmt->execute([$variant['id']]);
         $revenue = $stmt->fetchColumn();
 
+        $stmt = $db->prepare("SELECT COALESCE(SUM(revenue), 0) as cart_revenue FROM events WHERE variant_id = ? AND event_type = 'add_to_cart'");
+        $stmt->execute([$variant['id']]);
+        $cartRevenue = $stmt->fetchColumn();
+
         $cr = $views > 0 ? ($conversions / $views) * 100 : 0;
+        $atcRate = $views > 0 ? ($addToCarts / $views) * 100 : 0;
         $aov = $conversions > 0 ? $revenue / $conversions : 0;
+        $revenuePerSession = $views > 0 ? $revenue / $views : 0;
 
         $stats[$variant['id']] = [
             'variant' => $variant,
             'views' => $views,
+            'add_to_carts' => $addToCarts,
             'conversions' => $conversions,
             'cr' => $cr,
+            'atc_rate' => $atcRate,
             'revenue' => $revenue,
-            'aov' => $aov
+            'cart_revenue' => $cartRevenue,
+            'aov' => $aov,
+            'revenue_per_session' => $revenuePerSession
         ];
     }
 
@@ -739,6 +753,18 @@ test
                         <span class="stat-value"><?= number_format($stat['views']) ?></span>
                     </div>
                     <div class="stat-row">
+                        <span class="stat-label">Add to Carts</span>
+                        <span class="stat-value"><?= number_format($stat['add_to_carts']) ?></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">ATC Rate</span>
+                        <span class="stat-value"><?= number_format($stat['atc_rate'], 2) ?>%</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Cart Revenue</span>
+                        <span class="stat-value">$<?= number_format($stat['cart_revenue'], 2) ?></span>
+                    </div>
+                    <div class="stat-row">
                         <span class="stat-label">Conversions</span>
                         <span class="stat-value"><?= number_format($stat['conversions']) ?></span>
                     </div>
@@ -749,6 +775,10 @@ test
                     <div class="stat-row">
                         <span class="stat-label">Revenue</span>
                         <span class="stat-value">$<?= number_format($stat['revenue'], 2) ?></span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Revenue/Session</span>
+                        <span class="stat-value">$<?= number_format($stat['revenue_per_session'], 2) ?></span>
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">AOV</span>
