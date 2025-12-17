@@ -266,6 +266,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $page === 'create') {
     exit;
 }
 
+// Handle edit form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $page === 'edit') {
+    $testId = $_POST['test_id'];
+
+    // Update test details
+    $stmt = $db->prepare("UPDATE tests SET name = ?, website = ?, page_type = ?, url_pattern = ?, traffic_split = ? WHERE id = ?");
+    $stmt->execute([
+        $_POST['name'],
+        $_POST['website'],
+        $_POST['page_type'],
+        $_POST['url_pattern'],
+        $_POST['traffic_split'],
+        $testId
+    ]);
+
+    // Update variant B JavaScript
+    $stmt = $db->prepare("UPDATE variants SET javascript = ? WHERE test_id = ? AND is_control = 0");
+    $stmt->execute([$_POST['javascript'], $testId]);
+
+    header('Location: ?page=results&id=' . $testId);
+    exit;
+}
+
 // Toggle test active status
 if (isset($_GET['toggle'])) {
     $stmt = $db->prepare("UPDATE tests SET is_active = 1 - is_active WHERE id = ?");
@@ -428,6 +451,7 @@ if (isset($_GET['toggle'])) {
                             <td><?= $conversions ?></td>
                             <td>
                                 <a href="?page=results&id=<?= $test['id'] ?>" class="btn btn-small">View Results</a>
+                                <a href="?page=edit&id=<?= $test['id'] ?>" class="btn btn-small" style="background: #ffc107; color: #000;">Edit</a>
                                 <a href="?page=tests&toggle=<?= $test['id'] ?>" class="btn btn-small <?= $test['is_active'] ? 'btn-danger' : 'btn-success' ?>">
                                     <?= $test['is_active'] ? 'Pause' : 'Activate' ?>
                                 </a>
@@ -494,6 +518,83 @@ if (isset($_GET['toggle'])) {
             </div>
 
             <button type="submit" class="btn">Create Test</button>
+        </form>
+    </div>
+
+<?php elseif ($page === 'edit'): ?>
+    <!-- EDIT TEST PAGE -->
+    <?php
+    $testId = $_GET['id'] ?? 0;
+    $stmt = $db->prepare("SELECT * FROM tests WHERE id = ?");
+    $stmt->execute([$testId]);
+    $test = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$test) {
+        echo "Test not found";
+        exit;
+    }
+
+    $stmt = $db->prepare("SELECT * FROM variants WHERE test_id = ? AND is_control = 0");
+    $stmt->execute([$testId]);
+    $variantB = $stmt->fetch(PDO::FETCH_ASSOC);
+    ?>
+
+    <div class="container">
+        <div class="nav">
+            <a href="?page=tests">Tests</a>
+            <a href="?page=create">Create Test</a>
+            <a href="?page=logout" style="float: right;">Logout</a>
+        </div>
+
+        <h1>Edit Test</h1>
+
+        <form method="POST" action="?page=edit">
+            <input type="hidden" name="test_id" value="<?= $test['id'] ?>">
+
+            <div class="form-group">
+                <label>Test Name</label>
+                <input type="text" name="name" value="<?= htmlspecialchars($test['name']) ?>" required>
+            </div>
+
+            <div class="form-group">
+                <label>Website</label>
+                <select name="website" required>
+                    <option value="jbracks.com.au" <?= $test['website'] === 'jbracks.com.au' ? 'selected' : '' ?>>jbracks.com.au</option>
+                    <option value="jbracks.com" <?= $test['website'] === 'jbracks.com' ? 'selected' : '' ?>>jbracks.com</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Page Type</label>
+                <select name="page_type" required>
+                    <option value="product" <?= $test['page_type'] === 'product' ? 'selected' : '' ?>>Product Page</option>
+                    <option value="collection" <?= $test['page_type'] === 'collection' ? 'selected' : '' ?>>Collection Page</option>
+                    <option value="homepage" <?= $test['page_type'] === 'homepage' ? 'selected' : '' ?>>Homepage</option>
+                    <option value="cart" <?= $test['page_type'] === 'cart' ? 'selected' : '' ?>>Cart Page</option>
+                    <option value="all" <?= $test['page_type'] === 'all' ? 'selected' : '' ?>>All Pages</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>URL Pattern (regex)</label>
+                <input type="text" name="url_pattern" value="<?= htmlspecialchars($test['url_pattern']) ?>" required>
+                <small style="color: #666; display: block; margin-top: 5px;">Use .* to match all pages, or specific patterns like /products/.*</small>
+            </div>
+
+            <div class="form-group">
+                <label>Traffic Split (%)</label>
+                <input type="number" name="traffic_split" value="<?= $test['traffic_split'] ?>" min="1" max="99" required>
+                <small style="color: #666; display: block; margin-top: 5px;">Percentage of traffic that sees Variant B (rest sees Control)</small>
+            </div>
+
+            <div class="form-group">
+                <label>Variant B JavaScript</label>
+                <textarea name="javascript" required><?= htmlspecialchars($variantB['javascript']) ?></textarea>
+                <small style="color: #666; display: block; margin-top: 5px;">This code will run for users in Variant B.</small>
+            </div>
+
+            <button type="submit" class="btn">Save Changes</button>
+            <a href="?page=results&id=<?= $test['id'] ?>" class="btn" style="background: #6c757d;">Cancel</a>
         </form>
     </div>
 
@@ -608,6 +709,7 @@ if (isset($_GET['toggle'])) {
             Traffic Split: <?= $test['traffic_split'] ?>%
         </p>
         <div style="margin-bottom: 30px;">
+            <a href="?page=edit&id=<?= $test['id'] ?>" class="btn" style="background: #ffc107; color: #000;">Edit Test</a>
             <a href="?toggle=<?= $test['id'] ?>&return=results" class="btn <?= $test['is_active'] ? 'btn-danger' : 'btn-success' ?>">
                 <?= $test['is_active'] ? 'Pause Test' : 'Resume Test' ?>
             </a>
