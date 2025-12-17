@@ -122,7 +122,8 @@ function getProductData(element) {
         const product = ShopifyAnalytics.meta.product;
         productData.product_id = product.id;
         productData.product_name = product.name;
-        productData.price = parseFloat(product.variants[0]?.price || 0);
+        // Shopify prices are in cents, convert to dollars
+        productData.price = parseFloat(product.variants[0]?.price || 0) / 100;
     }
     // Method 2: Look for price in DOM
     else {
@@ -246,22 +247,23 @@ async function initABTests() {
                 // Method 1: Shopify.checkout (most common)
                 if (typeof Shopify !== 'undefined' && Shopify.checkout) {
                     const checkout = Shopify.checkout;
-                    revenue = parseFloat(checkout.total_price) || 0;
+                    // Shopify prices are in cents, convert to dollars
+                    revenue = (parseFloat(checkout.total_price) || 0) / 100;
 
                     orderMetadata = {
                         order_id: checkout.order_id,
-                        subtotal: parseFloat(checkout.subtotal_price) || 0,
-                        total: parseFloat(checkout.total_price) || 0,
-                        tax: parseFloat(checkout.total_tax) || 0,
-                        shipping: parseFloat(checkout.shipping_rate?.price) || 0,
-                        discount: parseFloat(checkout.discount?.amount) || 0,
+                        subtotal: (parseFloat(checkout.subtotal_price) || 0) / 100,
+                        total: (parseFloat(checkout.total_price) || 0) / 100,
+                        tax: (parseFloat(checkout.total_tax) || 0) / 100,
+                        shipping: (parseFloat(checkout.shipping_rate?.price) || 0) / 100,
+                        discount: (parseFloat(checkout.discount?.amount) || 0) / 100,
                         currency: checkout.currency,
                         item_count: checkout.line_items?.length || 0
                     };
                 }
                 // Method 2: Shopify.Checkout (alternative)
                 else if (typeof Shopify !== 'undefined' && Shopify.Checkout) {
-                    revenue = parseFloat(Shopify.Checkout.total_price) || 0;
+                    revenue = (parseFloat(Shopify.Checkout.total_price) || 0) / 100;
                     orderMetadata.total = revenue;
                 }
                 // Method 3: Look for order data in meta tags (some themes)
