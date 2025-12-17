@@ -235,10 +235,16 @@ async function initABTests() {
             });
 
             // Track purchase on thank you page
-            if (window.location.pathname.includes('/thank_you') ||
+            // Check multiple patterns for Shopify thank you pages
+            const isThankYouPage =
+                window.location.pathname.includes('/thank_you') ||
                 window.location.pathname.includes('/orders/') ||
-                window.location.pathname.includes('/checkouts/') ||
-                window.location.search.includes('checkout')) {
+                window.location.pathname.includes('/checkouts/') && window.location.pathname.includes('/thank_you') ||
+                (window.location.search.includes('checkout') && window.location.search.includes('thank_you')) ||
+                document.querySelector('.os-order-number, [data-order-number], .checkout-thank-you') !== null ||
+                (typeof Shopify !== 'undefined' && Shopify.checkout && Shopify.checkout.order_id);
+
+            if (isThankYouPage) {
 
                 // Try to get order details from Shopify checkout object
                 let revenue = 0;
@@ -280,14 +286,22 @@ async function initABTests() {
                     }
                 }
 
-                // Debug logging (remove in production if desired)
-                console.log('A/B Test Purchase Tracked:', {
+                // Debug logging
+                console.log('=== A/B Test Purchase Tracking ===');
+                console.log('Page URL:', window.location.href);
+                console.log('Is Thank You Page:', isThankYouPage);
+                console.log('Shopify Object Available:', typeof Shopify !== 'undefined');
+                console.log('Shopify.checkout Available:', typeof Shopify !== 'undefined' && !!Shopify.checkout);
+                if (typeof Shopify !== 'undefined' && Shopify.checkout) {
+                    console.log('Shopify.checkout Data:', Shopify.checkout);
+                }
+                console.log('Purchase Tracked:', {
                     test_id: test.id,
                     variant_id: variant.id,
                     revenue: revenue,
-                    order_details: orderMetadata,
-                    shopify_data_available: typeof Shopify !== 'undefined' && !!Shopify.checkout
+                    order_details: orderMetadata
                 });
+                console.log('===================================');
 
                 trackEvent(test.id, variant.id, 'purchase', revenue, orderMetadata);
             }
